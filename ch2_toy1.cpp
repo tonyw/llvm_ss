@@ -422,7 +422,7 @@ static void Driver() {
 
 int main(int argc, char *argv[]) {
     init_precedence();
-    char* filename = "../example1";
+    char* filename = argv[1];
     file = fopen(filename, "r");
     if (file == 0) {
         printf("Could not open file\n");
