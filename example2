@@ -1,9 +1,2 @@
-
 def foo (x,y)
-    x + y;
-
-def boo(x,y)
-    foo(x,1) + foo(y,1);
-
-
-boo(10,7)
+    (x+y)+1

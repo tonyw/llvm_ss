@@ -3,6 +3,9 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Transforms/Scalar/GVN.h"
 #include <cctype>
 #include <cstdio>
 #include <map>
@@ -25,7 +28,7 @@ FILE *file;
 static std::string Identifier_string;
 static int Numeric_Val;
 
-static int get_token() {
+static int getToken() {
     static int LastChar = ' ';
     while (isspace(LastChar)) {
         LastChar = fgetc(file);
@@ -58,7 +61,7 @@ static int get_token() {
         do LastChar = fgetc(file);
         while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
 
-        if (LastChar != EOF) return get_token();
+        if (LastChar != EOF) return getToken();
     }
 
     if (LastChar == EOF) return EOF_TOKEN;
@@ -70,134 +73,136 @@ static int get_token() {
 
 namespace {
 
-    class BaseAST {
+    class ExprAST {
     public:
-        virtual ~BaseAST() {}
+        virtual ~ExprAST() {}
 
         virtual Value *Codegen() = 0;
     };
 
-    class NumericAST : public BaseAST {
-        float numeric_val;
+    class NumericAST : public ExprAST {
+        float numVal;
     public :
-        NumericAST(float val) : numeric_val(val) {}
+        NumericAST(float val) : numVal(val) {}
 
         Value *Codegen() override;
     };
 
-    class VariableAST : public BaseAST {
-        std::string Var_Name;
+    class VariableAST : public ExprAST {
+        std::string varName;
     public:
-        VariableAST(const std::string &name) : Var_Name(name) {}
+        VariableAST(const std::string &name) : varName(name) {}
 
         Value *Codegen() override;
     };
 
-    class BinaryAST : public BaseAST {
-        char Bin_Operator;
-        BaseAST *LHS, *RHS;
+    class BinaryAST : public ExprAST {
+        char op;
+        std::unique_ptr<ExprAST> LHS, RHS;
     public:
-        BinaryAST(char op, BaseAST *lhs, BaseAST *rhs)
-                : Bin_Operator(op), LHS(lhs), RHS(rhs) {}
+        BinaryAST(char op, std::unique_ptr<ExprAST> lhs, std::unique_ptr<ExprAST> rhs)
+                : op(op), LHS(std::move(lhs)), RHS(std::move(rhs)) {}
 
         Value *Codegen() override;
     };
 
-    class FunctionCallAST : public BaseAST {
-        std::string Function_Callee;
-        std::vector<BaseAST *> Function_Arguments;
+    class CallExprAST : public ExprAST {
+        std::string callee;
+        std::vector<std::unique_ptr<ExprAST> > args;
     public:
-        FunctionCallAST(const std::string &callee, std::vector<BaseAST *> &args) :
-                Function_Callee(callee), Function_Arguments(args) {}
+        CallExprAST(const std::string &callee, std::vector<std::unique_ptr<ExprAST> > args) :
+                callee(callee), args(std::move(args)) {}
 
         Value *Codegen() override;
     };
 
-    class FunctionDeclAST {
-        std::string Func_Name;
-        std::vector<std::string> Arguments;
+    class PrototypeAST {
+        std::string name;
+        std::vector<std::string> args;
     public:
-        FunctionDeclAST(const std::string &name, const std::vector<std::string> &args) :
-                Func_Name(name), Arguments(args) {};
-
+        PrototypeAST(const std::string &name, const std::vector<std::string> args) :
+                name(name), args(std::move(args)) {};
+        const std::string & getName() const {
+            return name;
+        }
         Function *Codegen();
     };
 
-    class FunctionDefnAST {
-        FunctionDeclAST *Func_Decl;
-        BaseAST *Body;
+    class FunctionAST {
+        std::unique_ptr<PrototypeAST> proto;
+        std::unique_ptr<ExprAST> body;
     public:
-        FunctionDefnAST(FunctionDeclAST *proto, BaseAST *body) :
-                Func_Decl(proto), Body(body) {}
+        FunctionAST(std::unique_ptr<PrototypeAST> proto, std::unique_ptr<ExprAST> body) :
+                proto(std::move(proto)), body(std::move(body)) {}
 
         Function *Codegen();
     };
 }
 
-static int Current_token;
+static int currentToken;
 
-static int next_token() {
-    return Current_token = get_token();
+static int nextToken() {
+    return currentToken = getToken();
 }
 
-static std::map<char, int> Operator_Precedence;
+static std::map<char, int> opPrecedence;
 
 static int getBinOpPrecedence() {
-    if (!isascii(Current_token))
+    if (!isascii(currentToken))
         return -1;
 
-    int TokPrec = Operator_Precedence[Current_token];
+    int TokPrec = opPrecedence[currentToken];
     if (TokPrec <= 0) return -1;
     return TokPrec;
 }
 
-static BaseAST *expression_parser();
+static std::unique_ptr<ExprAST> expression_parser();
 
-static BaseAST *identifier_parser() {
+static std::unique_ptr<ExprAST> identifier_parser() {
     std::string IdName = Identifier_string;
-    next_token();
-    if (Current_token != '(')
-        return new VariableAST(IdName);
+    nextToken();
+    if (currentToken != '(')
+        return std::make_unique<VariableAST>(IdName);
 
-    next_token();
+    nextToken();
 
-    std::vector<BaseAST *> Args;
-    if (Current_token != ')') {
-        while (1) {
-            BaseAST *Arg = expression_parser();
-            if (!Arg) return 0;
-            Args.push_back(Arg);
+    std::vector<std::unique_ptr<ExprAST> > args;
+    if (currentToken != ')') {
+        while (true) {
+            auto arg = expression_parser();
+            if (!arg) return nullptr;
+            args.push_back(std::move(arg));
 
-            if (Current_token == ')') break;
+            if (currentToken == ')') break;
 
-            if (Current_token != ',')
+            if (currentToken != ',')
                 return 0;
-            next_token();
+            nextToken();
         }
     }
-    next_token();
+    nextToken();
 
-    return new FunctionCallAST(IdName, Args);
+    return std::make_unique<CallExprAST>(IdName, std::move(args));
 }
 
-static BaseAST *numeric_parser() {
-    BaseAST *Result = new NumericAST(Numeric_Val);
-    next_token();
-    return Result;
+static std::unique_ptr<ExprAST> numeric_parser() {
+    auto Result = std::make_unique<NumericAST>(Numeric_Val);
+    nextToken();
+    return std::move(Result);
 }
 
-static BaseAST *paran_parser() {
-    next_token();
-    BaseAST *V = expression_parser();
+static std::unique_ptr<ExprAST> paran_parser() {
+    nextToken();
+    std::unique_ptr<ExprAST> V = expression_parser();
     if (!V) return 0;
 
-    if (Current_token != ')')
+    if (currentToken != ')')
         return 0;
     return V;
 }
 
-static BaseAST *Base_Parser() {
-    switch (Current_token) {
+static std::unique_ptr<ExprAST> Base_Parser() {
+    switch (currentToken) {
         default:
             return 0;
         case IDENTIFIER_TOKEN :
@@ -209,83 +214,83 @@ static BaseAST *Base_Parser() {
     }
 }
 
-static BaseAST *binary_op_parser(int Old_Prec, BaseAST *LHS) {
+static std::unique_ptr<ExprAST> binary_op_parser(int Old_Prec, std::unique_ptr<ExprAST> LHS) {
     while (1) {
-        if (Current_token == ';') return LHS;
+        if (currentToken == ';') return LHS;
         int Operator_Prec = getBinOpPrecedence();
 
         if (Operator_Prec < Old_Prec)
             return LHS;
 
-        char BinOp = Current_token;
-        next_token();
+        char BinOp = currentToken;
+        nextToken();
 
-        BaseAST *RHS = Base_Parser();
-        if (!RHS) return 0;
+        std::unique_ptr<ExprAST> RHS = Base_Parser();
+        if (!RHS) return nullptr;
 
         int Next_Prec = getBinOpPrecedence();
         if (Operator_Prec < Next_Prec) {
-            RHS = binary_op_parser(Operator_Prec + 1, RHS);
-            if (RHS == 0) return 0;
+            RHS = binary_op_parser(Operator_Prec + 1, std::move(RHS));
+            if (!RHS) return nullptr;
         }
 
-        LHS = new BinaryAST(BinOp, LHS, RHS);
+        LHS = std::make_unique<BinaryAST>(BinOp, std::move(LHS), std::move(RHS));
     }
 }
 
-static BaseAST *expression_parser() {
-    BaseAST *LHS = Base_Parser();
-    if (!LHS) return 0;
-    return binary_op_parser(0, LHS);
+static std::unique_ptr<ExprAST> expression_parser() {
+    auto LHS = Base_Parser();
+    if (!LHS) return nullptr;
+    return binary_op_parser(0, std::move(LHS));
 }
 
-static FunctionDeclAST *func_decl_parser() {
-    if (Current_token != IDENTIFIER_TOKEN)
+static std::unique_ptr<PrototypeAST> func_decl_parser() {
+    if (currentToken != IDENTIFIER_TOKEN)
         return 0;
 
     std::string FnName = Identifier_string;
-    next_token();
+    nextToken();
 
-    if (Current_token != '(')
+    if (currentToken != '(')
         return 0;
 
     std::vector<std::string> Function_Argument_Names;
-    while (next_token() == IDENTIFIER_TOKEN || Current_token == ',') {
-        if (Current_token != ',') {
+    while (nextToken() == IDENTIFIER_TOKEN || currentToken == ',') {
+        if (currentToken != ',') {
             Function_Argument_Names.push_back(Identifier_string);
         }
     }
 
-    if (Current_token != ')')
+    if (currentToken != ')')
         return 0;
-    next_token();
-    return new FunctionDeclAST(FnName, Function_Argument_Names);
+    nextToken();
+    return std::make_unique<PrototypeAST>(FnName, std::move(Function_Argument_Names));
 }
 
-static FunctionDefnAST *func_defn_parser() {
-    next_token();
-    FunctionDeclAST *Decl = func_decl_parser();
+static std::unique_ptr<FunctionAST> func_defn_parser() {
+    nextToken();
+    std::unique_ptr<PrototypeAST> Decl = func_decl_parser();
     if (Decl == 0) return 0;
-    if (BaseAST *Body = expression_parser()) {
-        return new FunctionDefnAST(Decl, Body);
+    if (std::unique_ptr<ExprAST> Body = expression_parser()) {
+        return std::make_unique<FunctionAST>(std::move(Decl), std::move(Body));
     }
 
     return 0;
 }
 
-static FunctionDefnAST *top_level_parser() {
-    if (BaseAST *E = expression_parser()) {
-        FunctionDeclAST *Func_Decl = new FunctionDeclAST("_anon_expr", std::vector<std::string>());
-        return new FunctionDefnAST(Func_Decl, E);
+static std::unique_ptr<FunctionAST> top_level_parser() {
+    if (std::unique_ptr<ExprAST> E = expression_parser()) {
+        std::unique_ptr<PrototypeAST> Func_Decl = std::make_unique<PrototypeAST>("_anon_expr", std::vector<std::string>());
+        return std::make_unique<FunctionAST>(std::move(Func_Decl), std::move(E));
     }
     return 0;
 }
 
 static void init_precedence() {
-    Operator_Precedence['-'] = 1;
-    Operator_Precedence['+'] = 2;
-    Operator_Precedence['/'] = 3;
-    Operator_Precedence['*'] = 4;
+    opPrecedence['-'] = 1;
+    opPrecedence['+'] = 2;
+    opPrecedence['/'] = 3;
+    opPrecedence['*'] = 4;
 }
 
 //codegen
@@ -293,14 +298,15 @@ static void init_precedence() {
 static LLVMContext context;
 static IRBuilder<> builder(context);
 static std::unique_ptr<Module> module;
+static std::unique_ptr<legacy::FunctionPassManager> funcPassManager;
 static std::map<std::string, Value *> NamedValues;
 
 Value *NumericAST::Codegen() {
-    return ConstantFP::get(context, APFloat(numeric_val));
+    return ConstantFP::get(context, APFloat(numVal));
 }
 
 Value *VariableAST::Codegen() {
-    Value *v = NamedValues[Var_Name];
+    Value *v = NamedValues[varName];
     if (!v) return 0;
     return v;
 }
@@ -310,7 +316,7 @@ Value *BinaryAST::Codegen() {
     Value *R = RHS->Codegen();
     if (L == 0 || R == 0) return 0;
 
-    switch (Bin_Operator) {
+    switch (op) {
         case '+' :
             return builder.CreateAdd(L, R, "addtmp");
         case '-' :
@@ -324,55 +330,56 @@ Value *BinaryAST::Codegen() {
     }
 }
 
-Value *FunctionCallAST::Codegen() {
-    Function *CalleeF = module->getFunction(Function_Callee);
+Value *CallExprAST::Codegen() {
+    Function *CalleeF = module->getFunction(callee);
 
     std::vector<Value *> ArgsV;
-    for (unsigned i = 0, e = Function_Arguments.size(); i != e; ++i) {
-        ArgsV.push_back(Function_Arguments[i]->Codegen());
+    for (unsigned i = 0, e = args.size(); i != e; ++i) {
+        ArgsV.push_back(args[i]->Codegen());
         if (ArgsV.back() == 0) return 0;
     }
 
     return builder.CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
-Function *FunctionDeclAST::Codegen() {
-    std::vector<Type *> Integers(Arguments.size(), Type::getInt32Ty(context));
+Function *PrototypeAST::Codegen() {
+    std::vector<Type *> Integers(args.size(), Type::getInt32Ty(context));
     FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), Integers, false);
-    Function *F = Function::Create(FT, Function::ExternalLinkage, Func_Name, module.get());
+    Function *F = Function::Create(FT, Function::ExternalLinkage, name, module.get());
 
-    if (F->getName() != Func_Name) {
+    if (F->getName() != name) {
         F->eraseFromParent();
-        F = module->getFunction(Func_Name);
+        F = module->getFunction(name);
 
         if (!F->empty()) return 0;
 
-        if (F->arg_size() != Arguments.size()) return 0;
+        if (F->arg_size() != args.size()) return 0;
 
     }
 
     unsigned Idx = 0;
-    for (Function::arg_iterator Arg_It = F->arg_begin(); Idx != Arguments.size(); ++Arg_It, ++Idx) {
-        Arg_It->setName(Arguments[Idx]);
-        NamedValues[Arguments[Idx]] = Arg_It;
+    for (Function::arg_iterator Arg_It = F->arg_begin(); Idx != args.size(); ++Arg_It, ++Idx) {
+        Arg_It->setName(args[Idx]);
+        NamedValues[args[Idx]] = Arg_It;
     }
 
     return F;
 
 }
 
-Function *FunctionDefnAST::Codegen() {
+Function *FunctionAST::Codegen() {
     NamedValues.clear();
 
-    Function *TheFunction = Func_Decl->Codegen();
+    Function *TheFunction = proto->Codegen();
     if (TheFunction == 0) return 0;
 
     BasicBlock *BB = BasicBlock::Create(context, "entry", TheFunction);
     builder.SetInsertPoint(BB);
 
-    if (Value *RetVal = Body->Codegen()) {
+    if (Value *RetVal = body->Codegen()) {
         builder.CreateRet(RetVal);
         verifyFunction(*TheFunction);
+        funcPassManager->run(*TheFunction);
         return TheFunction;
     }
 
@@ -380,35 +387,44 @@ Function *FunctionDefnAST::Codegen() {
     return 0;
 }
 
+void initModuleAndPassManager(char* moduleName){
+    module = std::make_unique<Module>(moduleName,context);
+    funcPassManager = std::make_unique<legacy::FunctionPassManager>(module.get());
+    funcPassManager->add(createInstructionCombiningPass());
+    funcPassManager->add(createReassociatePass());
+    funcPassManager->add(createGVNPass());
+    funcPassManager->add(createCFGSimplificationPass());
+    funcPassManager->doInitialization();
+}
 
 static void HandleDefn() {
-    if (FunctionDefnAST *F = func_defn_parser()) {
-        if (Function *LF = F->Codegen()) {
+    if (std::unique_ptr<FunctionAST> F = func_defn_parser()) {
+        if (auto LF = F->Codegen()) {
             //LF->print(errs());
         }
     } else {
-        next_token();
+        nextToken();
     }
 }
 
 static void HandleTopExpression() {
-    if (FunctionDefnAST *F = top_level_parser()) {
+    if (std::unique_ptr<FunctionAST> F = top_level_parser()) {
 
-        if (Function *LF = F->Codegen()) {
+        if (auto LF = F->Codegen()) {
             //LF->print(errs());
         }
     } else {
-        next_token();
+        nextToken();
     }
 }
 
 static void Driver() {
     while (1) {
-        switch (Current_token) {
+        switch (currentToken) {
             case EOF_TOKEN :
                 return;
             case ';' :
-                next_token();
+                nextToken();
                 break;
             case DEF_TOKEN :
                 HandleDefn();
@@ -420,6 +436,8 @@ static void Driver() {
     }
 }
 
+
+
 int main(int argc, char *argv[]) {
     init_precedence();
     char* filename = argv[1];
@@ -427,8 +445,8 @@ int main(int argc, char *argv[]) {
     if (file == 0) {
         printf("Could not open file\n");
     }
-    next_token();
-    module = std::make_unique<Module>(filename,context);
+    nextToken();
+    initModuleAndPassManager(filename);
     Driver();
     module->print(errs(), nullptr);
     return 0;
