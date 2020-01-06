@@ -4,4 +4,4 @@ def foo (x,y)
 def boo(x,y)
     foo(x,1) + foo(y,1);
 
-foo(10,7)
+boo(10,7)

@@ -261,7 +261,6 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
         if (currentToken == ';')
             return LHS;
         int opPrec = getBinOpPrecedence();
-        printf("the op prece is %d \n", opPrec);
         if (opPrec < exprPrec)
             return LHS;
 
@@ -273,7 +272,6 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
             return nullptr;
 
         int nextPrec = getBinOpPrecedence();
-        printf("the next prece is %d \n", opPrec);
         if (opPrec < nextPrec)
         {
             RHS = parseBinOp(opPrec + 1, std::move(RHS));
@@ -358,6 +356,23 @@ static IRBuilder<> builder(context);
 static std::unique_ptr<Module> module;
 static std::unique_ptr<legacy::FunctionPassManager> funcPassManager;
 static std::map<std::string, Value *> NamedValues;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+
+
+Function *getFunction(std::string Name) {
+  // First, see if the function has already been added to the current module.
+  if (auto *F = module->getFunction(Name))
+    return F;
+
+  // If not, check whether we can codegen the declaration from some existing
+  // prototype.
+  auto func = FunctionProtos.find(Name);
+  if (func != FunctionProtos.end()){
+    return func->second->Codegen();
+  }
+  // If no existing prototype exists, return null.
+  return nullptr;
+}
 
 Value *NumericAST::Codegen()
 {
@@ -382,11 +397,11 @@ Value *BinaryAST::Codegen()
     switch (op)
     {
     case '+':
-        return builder.CreateAdd(L, R, "addtmp");
+        return builder.CreateFAdd(L, R, "addtmp");
     case '-':
-        return builder.CreateSub(L, R, "subtmp");
+        return builder.CreateFSub(L, R, "subtmp");
     case '*':
-        return builder.CreateMul(L, R, "multmp");
+        return builder.CreateFMul(L, R, "multmp");
     case '/':
         return builder.CreateUDiv(L, R, "divtmp");
     default:
@@ -411,58 +426,49 @@ Value *CallExprAST::Codegen()
 
 Function *PrototypeAST::Codegen()
 {
-    std::vector<Type *> Integers(args.size(), Type::getInt32Ty(context));
-    FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), Integers, false);
-    Function *F = Function::Create(FT, Function::ExternalLinkage, name, module.get());
-
-    if (F->getName() != name)
+    std::vector<Type *> floats(args.size(), Type::getFloatTy(context));
+    FunctionType *funcType = FunctionType::get(Type::getFloatTy(context), floats, false);
+    Function *func = Function::Create(funcType, Function::ExternalLinkage, name, module.get());
+    size_t idx = 0;
+    for (auto & arg:func->args())
     {
-        F->eraseFromParent();
-        F = module->getFunction(name);
-
-        if (!F->empty())
-            return 0;
-
-        if (F->arg_size() != args.size())
-            return 0;
+        arg.setName(args[idx++]);
     }
-
-    unsigned Idx = 0;
-    for (Function::arg_iterator Arg_It = F->arg_begin(); Idx != args.size(); ++Arg_It, ++Idx)
-    {
-        Arg_It->setName(args[Idx]);
-        NamedValues[args[Idx]] = Arg_It;
-    }
-
-    return F;
+    return func;
 }
 
 Function *FunctionAST::Codegen()
 {
-    NamedValues.clear();
-
-    Function *TheFunction = proto->Codegen();
-    if (TheFunction == 0)
-        return 0;
-
-    BasicBlock *BB = BasicBlock::Create(context, "entry", TheFunction);
-    builder.SetInsertPoint(BB);
-
-    if (Value *RetVal = body->Codegen())
+    auto &p=*proto;
+    FunctionProtos[proto->getName()]=std::move(proto);
+    Function *theFunc = getFunction(p.getName());
+    if (!theFunc)
     {
-        builder.CreateRet(RetVal);
-        verifyFunction(*TheFunction);
-        funcPassManager->run(*TheFunction);
-        return TheFunction;
+        return nullptr;
+    }
+    BasicBlock *bb = BasicBlock::Create(context, "entry", theFunc);
+    builder.SetInsertPoint(bb);
+    NamedValues.clear();
+    for(auto & arg:theFunc->args()){
+        NamedValues[arg.getName()]=&arg;
     }
 
-    TheFunction->eraseFromParent();
-    return 0;
+    if (Value *retVal = body->Codegen())
+    {
+        builder.CreateRet(retVal);
+        verifyFunction(*theFunc);
+        funcPassManager->run(*theFunc);
+        verifyFunction(*theFunc);
+        return theFunc;
+    }
+
+    theFunc->eraseFromParent();
+    return nullptr;
 }
 
-void initModuleAndPassManager(char *moduleName)
+static void initModuleAndPassManager()
 {
-    module = std::make_unique<Module>(moduleName, context);
+    module = std::make_unique<Module>("toy", context);
     funcPassManager = std::make_unique<legacy::FunctionPassManager>(module.get());
     funcPassManager->add(createInstructionCombiningPass());
     funcPassManager->add(createReassociatePass());
@@ -533,7 +539,7 @@ int main(int argc, char *argv[])
         printf("Could not open file\n");
     }
     nextToken();
-    initModuleAndPassManager(filename);
+    initModuleAndPassManager();
     Driver();
     module->print(errs(), nullptr);
     return 0;
