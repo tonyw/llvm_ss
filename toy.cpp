@@ -14,153 +14,68 @@
 #include <vector>
 #include <iostream>
 
+#include "toy.h"
+
 using namespace llvm;
 
-enum Token_Type
-{
-    EOF_TOKEN = 0,
-    DEF_TOKEN,
-    IDENTIFIER_TOKEN,
-    NUMERIC_TOKEN,
-    RETURN_TOKEN
-};
 
 FILE *file;
-static std::string Identifier_string;
-static int Numeric_Val;
+static std::string identifierString;
+static int numericVal;
 
 static int getToken()
 {
-    static int LastChar = ' ';
-    while (isspace(LastChar))
+    static int lastChar = ' ';
+    while (isspace(lastChar))
     {
-        LastChar = fgetc(file);
+        lastChar = fgetc(file);
     }
 
-    if (isalpha(LastChar))
+    if (isalpha(lastChar))
     {
-        Identifier_string = LastChar;
-        while (isalnum((LastChar = fgetc(file))))
-            Identifier_string += LastChar;
+        identifierString = lastChar;
+        while (isalnum((lastChar = fgetc(file))))
+            identifierString += lastChar;
 
-        if (Identifier_string == "def")
+        if (identifierString == "def")
             return DEF_TOKEN;
-        if (Identifier_string == "return")
+        if (identifierString == "return")
             return RETURN_TOKEN;
 
         return IDENTIFIER_TOKEN;
     }
 
-    if (isdigit(LastChar))
+    if (isdigit(lastChar))
     {
-        std::string NumStr;
+        std::string numStr;
         do
         {
-            NumStr += LastChar;
-            LastChar = fgetc(file);
-        } while (isdigit(LastChar));
+            numStr += lastChar;
+            lastChar = fgetc(file);
+        } while (isdigit(lastChar));
 
-        Numeric_Val = strtod(NumStr.c_str(), 0);
+        numericVal = strtod(numStr.c_str(), 0);
         return NUMERIC_TOKEN;
     }
 
-    if (LastChar == '#')
+    if (lastChar == '#')
     {
         do
-            LastChar = fgetc(file);
-        while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
+            lastChar = fgetc(file);
+        while (lastChar != EOF && lastChar != '\n' && lastChar != '\r');
 
-        if (LastChar != EOF)
+        if (lastChar != EOF)
             return getToken();
     }
 
-    if (LastChar == EOF)
+    if (lastChar == EOF)
         return EOF_TOKEN;
 
-    int ThisChar = LastChar;
-    LastChar = fgetc(file);
-    return ThisChar;
+    int theChar = lastChar;
+    lastChar = fgetc(file);
+    return theChar;
 }
 
-namespace
-{
-
-class ExprAST
-{
-public:
-    virtual ~ExprAST() {}
-
-    virtual Value *Codegen() = 0;
-};
-
-class NumericAST : public ExprAST
-{
-    float numVal;
-
-public:
-    NumericAST(float val) : numVal(val) {}
-
-    Value *Codegen() override;
-};
-
-class VariableAST : public ExprAST
-{
-    std::string varName;
-
-public:
-    VariableAST(const std::string &name) : varName(name) {}
-
-    Value *Codegen() override;
-};
-
-class BinaryAST : public ExprAST
-{
-    char op;
-    std::unique_ptr<ExprAST> LHS, RHS;
-
-public:
-    BinaryAST(char op, std::unique_ptr<ExprAST> lhs, std::unique_ptr<ExprAST> rhs)
-        : op(op), LHS(std::move(lhs)), RHS(std::move(rhs)) {}
-
-    Value *Codegen() override;
-};
-
-class CallExprAST : public ExprAST
-{
-    std::string callee;
-    std::vector<std::unique_ptr<ExprAST>> args;
-
-public:
-    CallExprAST(const std::string &callee, std::vector<std::unique_ptr<ExprAST>> args) : callee(callee), args(std::move(args)) {}
-
-    Value *Codegen() override;
-};
-
-class PrototypeAST
-{
-    std::string name;
-    std::vector<std::string> args;
-
-public:
-    PrototypeAST(const std::string &name, const std::vector<std::string> args) : name(name), args(std::move(args)){};
-    const std::string &getName() const
-    {
-        return name;
-    }
-    Function *Codegen();
-};
-
-class FunctionAST
-{
-    std::unique_ptr<PrototypeAST> proto;
-    std::unique_ptr<ExprAST> body;
-
-public:
-    FunctionAST(std::unique_ptr<PrototypeAST> proto, std::unique_ptr<ExprAST> body) : proto(std::move(proto)), body(std::move(body)) {}
-
-    Function *Codegen();
-};
-} // namespace
 
 static int currentToken;
 
@@ -176,20 +91,20 @@ static int getBinOpPrecedence()
     if (!isascii(currentToken))
         return -1;
 
-    int TokPrec = opPrecedence[currentToken];
-    if (TokPrec <= 0)
+    int tokPrec = opPrecedence[currentToken];
+    if (tokPrec <= 0)
         return -1;
-    return TokPrec;
+    return tokPrec;
 }
 
 static std::unique_ptr<ExprAST> parseExpression();
 
 static std::unique_ptr<ExprAST> parseIdentifierExpr()
 {
-    std::string IdName = Identifier_string;
+    std::string idName = identifierString;
     nextToken();
     if (currentToken != '(')
-        return std::make_unique<VariableAST>(IdName);
+        return std::make_unique<VariableAST>(idName);
 
     nextToken();
 
@@ -213,12 +128,12 @@ static std::unique_ptr<ExprAST> parseIdentifierExpr()
     }
     nextToken();
 
-    return std::make_unique<CallExprAST>(IdName, std::move(args));
+    return std::make_unique<CallExprAST>(idName, std::move(args));
 }
 
 static std::unique_ptr<ExprAST> parseNumericExpr()
 {
-    auto Result = std::make_unique<NumericAST>(Numeric_Val);
+    auto Result = std::make_unique<NumericAST>(numericVal);
     nextToken();
     return std::move(Result);
 }
@@ -258,15 +173,15 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
 {
     while (1)
     {
-        if (currentToken == ';')
+        if (currentToken == ';'){
             return LHS;
+        }
         int opPrec = getBinOpPrecedence();
-        if (opPrec < exprPrec)
+        if (opPrec < exprPrec){
             return LHS;
-
+        }
         char BinOp = currentToken;
         nextToken();
-
         std::unique_ptr<ExprAST> RHS = parsePrimary();
         if (!RHS)
             return nullptr;
@@ -278,7 +193,6 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
             if (!RHS)
                 return nullptr;
         }
-
         LHS = std::make_unique<BinaryAST>(BinOp, std::move(LHS), std::move(RHS));
     }
 }
@@ -286,33 +200,36 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
 static std::unique_ptr<ExprAST> parseExpression()
 {
     auto LHS = parsePrimary();
-    if (!LHS)
+    if (!LHS){
         return nullptr;
+    }
     return parseBinOp(0, std::move(LHS));
 }
 
 static std::unique_ptr<PrototypeAST> parsePrototype()
 {
-    if (currentToken != IDENTIFIER_TOKEN)
+    if (currentToken != IDENTIFIER_TOKEN){
         return 0;
-
-    std::string FnName = Identifier_string;
+    }
+    std::string FnName = identifierString;
     nextToken();
 
-    if (currentToken != '(')
+    if (currentToken != '('){
         return 0;
+    }
 
     std::vector<std::string> Function_Argument_Names;
     while (nextToken() == IDENTIFIER_TOKEN || currentToken == ',')
     {
         if (currentToken != ',')
         {
-            Function_Argument_Names.push_back(Identifier_string);
+            Function_Argument_Names.push_back(identifierString);
         }
     }
 
-    if (currentToken != ')')
+    if (currentToken != ')'){
         return 0;
+    }
     nextToken();
     return std::make_unique<PrototypeAST>(FnName, std::move(Function_Argument_Names));
 }
@@ -321,13 +238,13 @@ static std::unique_ptr<FunctionAST> parseFunctionDef()
 {
     nextToken();
     std::unique_ptr<PrototypeAST> proto = parsePrototype();
-    if (proto == 0)
+    if (proto == 0){
         return 0;
+    }
     if (std::unique_ptr<ExprAST> body = parseExpression())
     {
         return std::make_unique<FunctionAST>(std::move(proto), std::move(body));
     }
-
     return 0;
 }
 
@@ -361,9 +278,9 @@ static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 
 Function *getFunction(std::string Name) {
   // First, see if the function has already been added to the current module.
-  if (auto *F = module->getFunction(Name))
-    return F;
-
+  if (auto *F = module->getFunction(Name)){
+      return F;
+  }
   // If not, check whether we can codegen the declaration from some existing
   // prototype.
   auto func = FunctionProtos.find(Name);
@@ -374,12 +291,12 @@ Function *getFunction(std::string Name) {
   return nullptr;
 }
 
-Value *NumericAST::Codegen()
+Value *NumericAST::codegen()
 {
     return ConstantFP::get(context, APFloat(numVal));
 }
 
-Value *VariableAST::Codegen()
+Value *VariableAST::codegen()
 {
     Value *v = NamedValues[varName];
     if (!v)
@@ -387,13 +304,13 @@ Value *VariableAST::Codegen()
     return v;
 }
 
-Value *BinaryAST::Codegen()
+Value *BinaryAST::codegen()
 {
-    Value *L = LHS->Codegen();
-    Value *R = RHS->Codegen();
-    if (L == 0 || R == 0)
+    Value *L = LHS->codegen();
+    Value *R = RHS->codegen();
+    if (L == 0 || R == 0){
         return 0;
-
+    }
     switch (op)
     {
     case '+':
@@ -409,14 +326,14 @@ Value *BinaryAST::Codegen()
     }
 }
 
-Value *CallExprAST::Codegen()
+Value *CallExprAST::codegen()
 {
     Function *CalleeF = module->getFunction(callee);
 
     std::vector<Value *> ArgsV;
     for (unsigned i = 0, e = args.size(); i != e; ++i)
     {
-        ArgsV.push_back(args[i]->Codegen());
+        ArgsV.push_back(args[i]->codegen());
         if (ArgsV.back() == 0)
             return 0;
     }
@@ -453,7 +370,7 @@ Function *FunctionAST::Codegen()
         NamedValues[arg.getName()]=&arg;
     }
 
-    if (Value *retVal = body->Codegen())
+    if (Value *retVal = body->codegen())
     {
         builder.CreateRet(retVal);
         verifyFunction(*theFunc);
@@ -508,7 +425,7 @@ static void handleTopExpression()
     }
 }
 
-static void Driver()
+static void driver()
 {
     while (1)
     {
@@ -540,7 +457,7 @@ int main(int argc, char *argv[])
     }
     nextToken();
     initModuleAndPassManager();
-    Driver();
+    driver();
     module->print(errs(), nullptr);
     return 0;
 }

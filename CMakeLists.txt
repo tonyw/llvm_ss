@@ -23,7 +23,7 @@ set(CMAKE_CXX_STANDARD 14)
 
 
 find_package(LLVM REQUIRED CONFIG)
-set(source_files toy.cpp)
+set(source_files toy.cpp toy.h)
 
 message(STATUS "This is BINARY dir " ${PROJECT_BINARY_DIR})
 message(STATUS "This is SOURCE dir " ${PROJECT_SOURCE_DIR})
