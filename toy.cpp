@@ -23,16 +23,13 @@ FILE *file;
 static std::string identifierString;
 static int numericVal;
 
-static int getToken()
-{
+static int getToken() {
     static int lastChar = ' ';
-    while (isspace(lastChar))
-    {
+    while (isspace(lastChar)) {
         lastChar = fgetc(file);
     }
 
-    if (isalpha(lastChar))
-    {
+    if (isalpha(lastChar)) {
         identifierString = lastChar;
         while (isalnum((lastChar = fgetc(file))))
             identifierString += lastChar;
@@ -45,11 +42,9 @@ static int getToken()
         return IDENTIFIER_TOKEN;
     }
 
-    if (isdigit(lastChar))
-    {
+    if (isdigit(lastChar)) {
         std::string numStr;
-        do
-        {
+        do {
             numStr += lastChar;
             lastChar = fgetc(file);
         } while (isdigit(lastChar));
@@ -58,8 +53,7 @@ static int getToken()
         return NUMERIC_TOKEN;
     }
 
-    if (lastChar == '#')
-    {
+    if (lastChar == '#') {
         do
             lastChar = fgetc(file);
         while (lastChar != EOF && lastChar != '\n' && lastChar != '\r');
@@ -79,15 +73,13 @@ static int getToken()
 
 static int currentToken;
 
-static int nextToken()
-{
+static int nextToken() {
     return currentToken = getToken();
 }
 
 static std::map<char, int> opPrecedence;
 
-static int getBinOpPrecedence()
-{
+static int getBinOpPrecedence() {
     if (!isascii(currentToken))
         return -1;
 
@@ -99,8 +91,7 @@ static int getBinOpPrecedence()
 
 static std::unique_ptr<ExprAST> parseExpression();
 
-static std::unique_ptr<ExprAST> parseIdentifierExpr()
-{
+static std::unique_ptr<ExprAST> parseIdentifierExpr() {
     std::string idName = identifierString;
     nextToken();
     if (currentToken != '(')
@@ -109,10 +100,8 @@ static std::unique_ptr<ExprAST> parseIdentifierExpr()
     nextToken();
 
     std::vector<std::unique_ptr<ExprAST>> args;
-    if (currentToken != ')')
-    {
-        while (true)
-        {
+    if (currentToken != ')') {
+        while (true) {
             auto arg = parseExpression();
             if (!arg)
                 return nullptr;
@@ -131,53 +120,45 @@ static std::unique_ptr<ExprAST> parseIdentifierExpr()
     return std::make_unique<CallExprAST>(idName, std::move(args));
 }
 
-static std::unique_ptr<ExprAST> parseNumericExpr()
-{
+static std::unique_ptr<ExprAST> parseNumericExpr() {
     auto Result = std::make_unique<NumericAST>(numericVal);
     nextToken();
     return std::move(Result);
 }
 
-static std::unique_ptr<ExprAST> parseParenExpr()
-{
+static std::unique_ptr<ExprAST> parseParenExpr() {
     nextToken();
     auto V = parseExpression();
-    if (!V)
-    {
+    if (!V) {
         return nullptr;
     }
-    if (currentToken != ')')
-    {
+    if (currentToken != ')') {
         return nullptr;
     }
     nextToken();
     return V;
 }
 
-static std::unique_ptr<ExprAST> parsePrimary()
-{
-    switch (currentToken)
-    {
-    default:
-        return 0;
-    case IDENTIFIER_TOKEN:
-        return parseIdentifierExpr();
-    case NUMERIC_TOKEN:
-        return parseNumericExpr();
-    case '(':
-        return parseParenExpr();
+static std::unique_ptr<ExprAST> parsePrimary() {
+    switch (currentToken) {
+        default:
+            return 0;
+        case IDENTIFIER_TOKEN:
+            return parseIdentifierExpr();
+        case NUMERIC_TOKEN:
+            return parseNumericExpr();
+        case '(':
+            return parseParenExpr();
     }
 }
 
-static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST> LHS)
-{
-    while (1)
-    {
-        if (currentToken == ';'){
+static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST> LHS) {
+    while (1) {
+        if (currentToken == ';') {
             return LHS;
         }
         int opPrec = getBinOpPrecedence();
-        if (opPrec < exprPrec){
+        if (opPrec < exprPrec) {
             return LHS;
         }
         char BinOp = currentToken;
@@ -187,8 +168,7 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
             return nullptr;
 
         int nextPrec = getBinOpPrecedence();
-        if (opPrec < nextPrec)
-        {
+        if (opPrec < nextPrec) {
             RHS = parseBinOp(opPrec + 1, std::move(RHS));
             if (!RHS)
                 return nullptr;
@@ -197,69 +177,61 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
     }
 }
 
-static std::unique_ptr<ExprAST> parseExpression()
-{
+static std::unique_ptr<ExprAST> parseExpression() {
     auto LHS = parsePrimary();
-    if (!LHS){
+    if (!LHS) {
         return nullptr;
     }
     return parseBinOp(0, std::move(LHS));
 }
 
-static std::unique_ptr<PrototypeAST> parsePrototype()
-{
-    if (currentToken != IDENTIFIER_TOKEN){
+static std::unique_ptr<PrototypeAST> parsePrototype() {
+    if (currentToken != IDENTIFIER_TOKEN) {
         return 0;
     }
     std::string FnName = identifierString;
     nextToken();
 
-    if (currentToken != '('){
+    if (currentToken != '(') {
         return 0;
     }
 
     std::vector<std::string> Function_Argument_Names;
-    while (nextToken() == IDENTIFIER_TOKEN || currentToken == ',')
-    {
-        if (currentToken != ',')
-        {
+    while (nextToken() == IDENTIFIER_TOKEN || currentToken == ',') {
+        if (currentToken != ',') {
             Function_Argument_Names.push_back(identifierString);
         }
     }
 
-    if (currentToken != ')'){
+    if (currentToken != ')') {
         return 0;
     }
     nextToken();
     return std::make_unique<PrototypeAST>(FnName, std::move(Function_Argument_Names));
 }
 
-static std::unique_ptr<FunctionAST> parseFunctionDef()
-{
+static std::unique_ptr<FunctionAST> parseFunctionDef() {
     nextToken();
     std::unique_ptr<PrototypeAST> proto = parsePrototype();
-    if (proto == 0){
+    if (proto == 0) {
         return 0;
     }
-    if (std::unique_ptr<ExprAST> body = parseExpression())
-    {
+    if (std::unique_ptr<ExprAST> body = parseExpression()) {
         return std::make_unique<FunctionAST>(std::move(proto), std::move(body));
     }
     return 0;
 }
 
-static std::unique_ptr<FunctionAST> parseTopLevelExpr()
-{
-    if (std::unique_ptr<ExprAST> E = parseExpression())
-    {
-        std::unique_ptr<PrototypeAST> Func_Decl = std::make_unique<PrototypeAST>("_anon_expr", std::vector<std::string>());
+static std::unique_ptr<FunctionAST> parseTopLevelExpr() {
+    if (std::unique_ptr<ExprAST> E = parseExpression()) {
+        std::unique_ptr<PrototypeAST> Func_Decl = std::make_unique<PrototypeAST>("_anon_expr",
+                                                                                 std::vector<std::string>());
         return std::make_unique<FunctionAST>(std::move(Func_Decl), std::move(E));
     }
     return 0;
 }
 
-static void initPrecedence()
-{
+static void initPrecedence() {
     opPrecedence['+'] = 1;
     opPrecedence['-'] = 2;
     opPrecedence['*'] = 3;
@@ -277,62 +249,56 @@ static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 
 
 Function *getFunction(std::string Name) {
-  // First, see if the function has already been added to the current module.
-  if (auto *F = module->getFunction(Name)){
-      return F;
-  }
-  // If not, check whether we can codegen the declaration from some existing
-  // prototype.
-  auto func = FunctionProtos.find(Name);
-  if (func != FunctionProtos.end()){
-    return func->second->Codegen();
-  }
-  // If no existing prototype exists, return null.
-  return nullptr;
+    // First, see if the function has already been added to the current module.
+    if (auto *F = module->getFunction(Name)) {
+        return F;
+    }
+    // If not, check whether we can codegen the declaration from some existing
+    // prototype.
+    auto func = FunctionProtos.find(Name);
+    if (func != FunctionProtos.end()) {
+        return func->second->codegen();
+    }
+    // If no existing prototype exists, return null.
+    return nullptr;
 }
 
-Value *NumericAST::codegen()
-{
+Value *NumericAST::codegen() {
     return ConstantFP::get(context, APFloat(numVal));
 }
 
-Value *VariableAST::codegen()
-{
+Value *VariableAST::codegen() {
     Value *v = NamedValues[varName];
     if (!v)
         return 0;
     return v;
 }
 
-Value *BinaryAST::codegen()
-{
+Value *BinaryAST::codegen() {
     Value *L = LHS->codegen();
     Value *R = RHS->codegen();
-    if (L == 0 || R == 0){
+    if (L == 0 || R == 0) {
         return 0;
     }
-    switch (op)
-    {
-    case '+':
-        return builder.CreateFAdd(L, R, "addtmp");
-    case '-':
-        return builder.CreateFSub(L, R, "subtmp");
-    case '*':
-        return builder.CreateFMul(L, R, "multmp");
-    case '/':
-        return builder.CreateUDiv(L, R, "divtmp");
-    default:
-        return 0;
+    switch (op) {
+        case '+':
+            return builder.CreateFAdd(L, R, "addtmp");
+        case '-':
+            return builder.CreateFSub(L, R, "subtmp");
+        case '*':
+            return builder.CreateFMul(L, R, "multmp");
+        case '/':
+            return builder.CreateUDiv(L, R, "divtmp");
+        default:
+            return 0;
     }
 }
 
-Value *CallExprAST::codegen()
-{
+Value *CallExprAST::codegen() {
     Function *CalleeF = module->getFunction(callee);
 
     std::vector<Value *> ArgsV;
-    for (unsigned i = 0, e = args.size(); i != e; ++i)
-    {
+    for (unsigned i = 0, e = args.size(); i != e; ++i) {
         ArgsV.push_back(args[i]->codegen());
         if (ArgsV.back() == 0)
             return 0;
@@ -341,41 +307,35 @@ Value *CallExprAST::codegen()
     return builder.CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
-Function *PrototypeAST::Codegen()
-{
+Function *PrototypeAST::codegen() {
     std::vector<Type *> floats(args.size(), Type::getFloatTy(context));
     FunctionType *funcType = FunctionType::get(Type::getFloatTy(context), floats, false);
     Function *func = Function::Create(funcType, Function::ExternalLinkage, name, module.get());
     size_t idx = 0;
-    for (auto & arg:func->args())
-    {
+    for (auto &arg:func->args()) {
         arg.setName(args[idx++]);
     }
     return func;
 }
 
-Function *FunctionAST::Codegen()
-{
-    auto &p=*proto;
-    FunctionProtos[proto->getName()]=std::move(proto);
+Function *FunctionAST::codegen() {
+    auto &p = *proto;
+    FunctionProtos[proto->getName()] = std::move(proto);
     Function *theFunc = getFunction(p.getName());
-    if (!theFunc)
-    {
+    if (!theFunc) {
         return nullptr;
     }
     BasicBlock *bb = BasicBlock::Create(context, "entry", theFunc);
     builder.SetInsertPoint(bb);
     NamedValues.clear();
-    for(auto & arg:theFunc->args()){
-        NamedValues[arg.getName()]=&arg;
+    for (auto &arg:theFunc->args()) {
+        NamedValues[arg.getName()] = &arg;
     }
 
-    if (Value *retVal = body->codegen())
-    {
+    if (Value *retVal = body->codegen()) {
         builder.CreateRet(retVal);
         verifyFunction(*theFunc);
         funcPassManager->run(*theFunc);
-        verifyFunction(*theFunc);
         return theFunc;
     }
 
@@ -383,8 +343,7 @@ Function *FunctionAST::Codegen()
     return nullptr;
 }
 
-static void initModuleAndPassManager()
-{
+static void initModuleAndPassManager() {
     module = std::make_unique<Module>("toy", context);
     funcPassManager = std::make_unique<legacy::FunctionPassManager>(module.get());
     funcPassManager->add(createInstructionCombiningPass());
@@ -394,65 +353,50 @@ static void initModuleAndPassManager()
     funcPassManager->doInitialization();
 }
 
-static void handleFunctionDef()
-{
-    if (std::unique_ptr<FunctionAST> F = parseFunctionDef())
-    {
-        if (auto LF = F->Codegen())
-        {
+static void handleFunctionDef() {
+    if (std::unique_ptr<FunctionAST> F = parseFunctionDef()) {
+        if (auto LF = F->codegen()) {
             //LF->print(errs());
         }
-    }
-    else
-    {
+    } else {
         nextToken();
     }
 }
 
-static void handleTopExpression()
-{
-    if (std::unique_ptr<FunctionAST> F = parseTopLevelExpr())
-    {
+static void handleTopExpression() {
+    if (std::unique_ptr<FunctionAST> F = parseTopLevelExpr()) {
 
-        if (auto LF = F->Codegen())
-        {
+        if (auto LF = F->codegen()) {
             //LF->print(errs());
         }
-    }
-    else
-    {
+    } else {
         nextToken();
     }
 }
 
-static void driver()
-{
-    while (1)
-    {
-        switch (currentToken)
-        {
-        case EOF_TOKEN:
-            return;
-        case ';':
-            nextToken();
-            break;
-        case DEF_TOKEN:
-            handleFunctionDef();
-            break;
-        default:
-            handleTopExpression();
-            break;
+static void driver() {
+    while (1) {
+        switch (currentToken) {
+            case EOF_TOKEN:
+                return;
+            case ';':
+                nextToken();
+                break;
+            case DEF_TOKEN:
+                handleFunctionDef();
+                break;
+            default:
+                handleTopExpression();
+                break;
         }
     }
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     initPrecedence();
     char *filename = argv[1];
     file = fopen(filename, "r");
-    if (file == 0)
-    {
+    if (file == 0) {
         printf("Could not open file\n");
     }
     nextToken();

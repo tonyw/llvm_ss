@@ -11,11 +11,9 @@
 #include <map>
 
 
-
 namespace {
 
-    enum Token_Type
-    {
+    enum Token_Type {
         EOF_TOKEN = 0,
         DEF_TOKEN,
         IDENTIFIER_TOKEN,
@@ -23,16 +21,14 @@ namespace {
         RETURN_TOKEN
     };
 
-    class ExprAST
-    {
+    class ExprAST {
     public:
         virtual ~ExprAST() {}
 
         virtual llvm::Value *codegen() = 0;
     };
 
-    class NumericAST : public ExprAST
-    {
+    class NumericAST : public ExprAST {
         float numVal;
 
     public:
@@ -41,8 +37,7 @@ namespace {
         llvm::Value *codegen() override;
     };
 
-    class VariableAST : public ExprAST
-    {
+    class VariableAST : public ExprAST {
         std::string varName;
 
     public:
@@ -51,8 +46,7 @@ namespace {
         llvm::Value *codegen() override;
     };
 
-    class BinaryAST : public ExprAST
-    {
+    class BinaryAST : public ExprAST {
         char op;
         std::unique_ptr<ExprAST> LHS, RHS;
 
@@ -63,40 +57,41 @@ namespace {
         llvm::Value *codegen() override;
     };
 
-    class CallExprAST : public ExprAST
-    {
+    class CallExprAST : public ExprAST {
         std::string callee;
         std::vector<std::unique_ptr<ExprAST>> args;
 
     public:
-        CallExprAST(const std::string &callee, std::vector<std::unique_ptr<ExprAST>> args) : callee(callee), args(std::move(args)) {}
+        CallExprAST(const std::string &callee, std::vector<std::unique_ptr<ExprAST>> args) : callee(callee),
+                                                                                             args(std::move(args)) {}
 
         llvm::Value *codegen() override;
     };
 
-    class PrototypeAST
-    {
+    class PrototypeAST {
         std::string name;
         std::vector<std::string> args;
 
     public:
-        PrototypeAST(const std::string &name, const std::vector<std::string> args) : name(name), args(std::move(args)){};
-        const std::string &getName() const
-        {
+        PrototypeAST(const std::string &name, const std::vector<std::string> args) : name(name),
+                                                                                     args(std::move(args)) {};
+
+        const std::string &getName() const {
             return name;
         }
-        llvm::Function *Codegen();
+
+        llvm::Function *codegen();
     };
 
-    class FunctionAST
-    {
+    class FunctionAST {
         std::unique_ptr<PrototypeAST> proto;
         std::unique_ptr<ExprAST> body;
 
     public:
-        FunctionAST(std::unique_ptr<PrototypeAST> proto, std::unique_ptr<ExprAST> body) : proto(std::move(proto)), body(std::move(body)) {}
+        FunctionAST(std::unique_ptr<PrototypeAST> proto, std::unique_ptr<ExprAST> body) : proto(std::move(proto)),
+                                                                                          body(std::move(body)) {}
 
-        llvm::Function *Codegen();
+        llvm::Function *codegen();
     };
 }
 
