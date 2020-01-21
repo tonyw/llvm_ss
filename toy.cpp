@@ -97,6 +97,16 @@ static int getBinOpPrecedence()
     return tokPrec;
 }
 
+/// LogError* - These are little helper functions for error handling.
+std::unique_ptr<ExprAST> LogError(const char *Str) {
+  fprintf(stderr, "Error: %s\n", Str);
+  return nullptr;
+}
+std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
 static std::unique_ptr<ExprAST> parseExpression();
 
 static std::unique_ptr<ExprAST> parseIdentifierExpr()
@@ -122,7 +132,7 @@ static std::unique_ptr<ExprAST> parseIdentifierExpr()
                 break;
 
             if (currentToken != ',')
-                return 0;
+                return LogError("Expected ')' or ',' in argument list");
             nextToken();
         }
     }
@@ -159,7 +169,7 @@ static std::unique_ptr<ExprAST> parsePrimary()
     switch (currentToken)
     {
     default:
-        return 0;
+        return LogError("unknown token when expecting an expression");
     case IDENTIFIER_TOKEN:
         return parseIdentifierExpr();
     case NUMERIC_TOKEN:
@@ -209,13 +219,13 @@ static std::unique_ptr<ExprAST> parseExpression()
 static std::unique_ptr<PrototypeAST> parsePrototype()
 {
     if (currentToken != IDENTIFIER_TOKEN){
-        return 0;
+        return LogErrorP("Expected function name in prototype");
     }
     std::string FnName = identifierString;
     nextToken();
 
     if (currentToken != '('){
-        return 0;
+        return LogErrorP("Expected '(' in prototype");
     }
 
     std::vector<std::string> Function_Argument_Names;
@@ -228,7 +238,7 @@ static std::unique_ptr<PrototypeAST> parsePrototype()
     }
 
     if (currentToken != ')'){
-        return 0;
+        return LogErrorP("Expected ')' in prototype");
     }
     nextToken();
     return std::make_unique<PrototypeAST>(FnName, std::move(Function_Argument_Names));
@@ -387,10 +397,11 @@ static void initModuleAndPassManager()
 {
     module = std::make_unique<Module>("toy", context);
     funcPassManager = std::make_unique<legacy::FunctionPassManager>(module.get());
-    funcPassManager->add(createInstructionCombiningPass());
-    funcPassManager->add(createReassociatePass());
-    funcPassManager->add(createGVNPass());
-    funcPassManager->add(createCFGSimplificationPass());
+    
+    // funcPassManager->add(createInstructionCombiningPass());
+    // funcPassManager->add(createReassociatePass());
+    // funcPassManager->add(createGVNPass());
+    // funcPassManager->add(createCFGSimplificationPass());
     funcPassManager->doInitialization();
 }
 
