@@ -6,7 +6,7 @@ SET(CMAKE_C_FLAGS_DEBUG          "-g")
 SET(CMAKE_CXX_FLAGS_DEBUG          "-g")
 
 find_package(LLVM REQUIRED CONFIG)
-set(source_files toy.cpp toy.h)
+set(source_files toy.cpp codegen.cpp toy.h)
 
 message(STATUS "This is BINARY dir " ${PROJECT_BINARY_DIR})
 message(STATUS "This is SOURCE dir " ${PROJECT_SOURCE_DIR})

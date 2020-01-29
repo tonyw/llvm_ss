@@ -1,10 +1,3 @@
-#include "llvm/IR/Verifier.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 #include <cctype>
 #include <cstdio>
@@ -17,11 +10,21 @@
 #include "toy.h"
 
 using namespace llvm;
-
+using namespace toy;
 
 FILE *file;
 static std::string identifierString;
 static int numericVal;
+
+/// LogError* - These are little helper functions for error handling.
+    std::unique_ptr<ExprAST> LogError(const char *Str) {
+    fprintf(stderr, "Error: %s\n", Str);
+    return nullptr;
+    }
+    std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+    LogError(Str);
+    return nullptr;
+    }
 
 static int getToken() {
     static int lastChar = ' ';
@@ -101,16 +104,6 @@ static int getBinOpPrecedence() {
     return tokPrec;
 }
 
-/// LogError* - These are little helper functions for error handling.
-std::unique_ptr<ExprAST> LogError(const char *Str) {
-  fprintf(stderr, "Error: %s\n", Str);
-  return nullptr;
-}
-std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
-  return nullptr;
-}
-
 static std::unique_ptr<ExprAST> parseExpression();
 
 static std::unique_ptr<ExprAST> parseIdentifierExpr() {
@@ -161,6 +154,34 @@ static std::unique_ptr<ExprAST> parseParenExpr() {
     return V;
 }
 
+static std::unique_ptr<ExprAST> parseIfExpr(){
+    nextToken();
+    auto Cond = parseExpression();
+    if (!Cond){
+        return nullptr;
+    }
+    printf("the cur tok is %c \n",currentToken);
+    if (currentToken != THEN_TOKEN)
+        return LogError("expected then");
+    nextToken();  // eat the then
+
+    auto Then = parseExpression();
+    if (!Then)
+        return nullptr;
+
+    if (currentToken != ELSE_TOKEN)
+        return LogError("expected else");
+
+    nextToken();
+
+    auto Else = parseExpression();
+    if (!Else)
+        return nullptr;
+
+    return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
+                                        std::move(Else));
+}
+
 static std::unique_ptr<ExprAST> parsePrimary()
 {
     switch (currentToken)
@@ -173,6 +194,8 @@ static std::unique_ptr<ExprAST> parsePrimary()
         return parseNumericExpr();
     case '(':
         return parseParenExpr();
+    case IF_TOKEN:
+        return parseIfExpr();
     }
 }
 
@@ -252,143 +275,22 @@ static std::unique_ptr<PrototypeAST> parseExtern() {
 
 static std::unique_ptr<FunctionAST> parseTopLevelExpr() {
     if (std::unique_ptr<ExprAST> E = parseExpression()) {
-        std::unique_ptr<PrototypeAST> Func_Decl = std::make_unique<PrototypeAST>("_anon_expr",
-                                                                                 std::vector<std::string>());
+        std::unique_ptr<PrototypeAST> Func_Decl = 
+        std::make_unique<PrototypeAST>("_anon_expr",std::vector<std::string>());
         return std::make_unique<FunctionAST>(std::move(Func_Decl), std::move(E));
     }
     return 0;
 }
 
 static void initPrecedence() {
-    opPrecedence['+'] = 1;
-    opPrecedence['-'] = 2;
-    opPrecedence['*'] = 3;
-    opPrecedence['/'] = 4;
-}
-
-//codegen
-
-static LLVMContext context;
-static IRBuilder<> builder(context);
-static std::unique_ptr<Module> module;
-static std::unique_ptr<legacy::FunctionPassManager> funcPassManager;
-static std::map<std::string, Value *> NamedValues;
-static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
-
-
-Function *getFunction(std::string Name) {
-    // First, see if the function has already been added to the current module.
-    if (auto *F = module->getFunction(Name)) {
-        return F;
-    }
-    // If not, check whether we can codegen the declaration from some existing
-    // prototype.
-    auto func = FunctionProtos.find(Name);
-    if (func != FunctionProtos.end()) {
-        return func->second->codegen();
-    }
-    // If no existing prototype exists, return null.
-    return nullptr;
-}
-
-Value *NumericAST::codegen() {
-    return ConstantFP::get(context, APFloat(numVal));
-}
-
-Value *VariableAST::codegen() {
-    Value *v = NamedValues[varName];
-    if (!v)
-        return 0;
-    return v;
-}
-
-Value *BinaryAST::codegen() {
-    Value *L = LHS->codegen();
-    Value *R = RHS->codegen();
-    if (L == 0 || R == 0) {
-        return 0;
-    }
-    switch (op) {
-        case '+':
-            return builder.CreateFAdd(L, R, "addtmp");
-        case '-':
-            return builder.CreateFSub(L, R, "subtmp");
-        case '*':
-            return builder.CreateFMul(L, R, "multmp");
-        case '/':
-            return builder.CreateUDiv(L, R, "divtmp");
-        default:
-            return 0;
-    }
-}
-
-
-
-Value *CallExprAST::codegen() {
-    Function *CalleeF = module->getFunction(callee);
-
-    if(!CalleeF){
-        fprintf(stderr, "Error: can't find function %s\n", callee.c_str());
-        return nullptr;
-    }
-
-    std::vector<Value *> ArgsV;
-    for (unsigned i = 0, e = args.size(); i != e; ++i) {
-        ArgsV.push_back(args[i]->codegen());
-        if (ArgsV.back() == 0)
-            return 0;
-    }
-
-    return builder.CreateCall(CalleeF, ArgsV, "calltmp");
-}
-
-Function *PrototypeAST::codegen() {
-    std::vector<Type *> floats(args.size(), Type::getFloatTy(context));
-    FunctionType *funcType = FunctionType::get(Type::getFloatTy(context), floats, false);
-    Function *func = Function::Create(funcType, Function::ExternalLinkage, name, module.get());
-    size_t idx = 0;
-    for (auto &arg:func->args()) {
-        arg.setName(args[idx++]);
-    }
-    return func;
-}
-
-Function *FunctionAST::codegen() {
-    auto &p = *proto;
-    FunctionProtos[proto->getName()] = std::move(proto);
-    Function *theFunc = getFunction(p.getName());
-    if (!theFunc) {
-        return nullptr;
-    }
-    BasicBlock *bb = BasicBlock::Create(context, "entry", theFunc);
-    builder.SetInsertPoint(bb);
-    NamedValues.clear();
-    for (auto &arg:theFunc->args()) {
-        NamedValues[arg.getName()] = &arg;
-    }
-
-    if (Value *retVal = body->codegen()) {
-        builder.CreateRet(retVal);
-        verifyFunction(*theFunc);
-        funcPassManager->run(*theFunc);
-        return theFunc;
-    }
-
-    theFunc->eraseFromParent();
-    return nullptr;
-}
-
-static void initModuleAndPassManager() {
-    module = std::make_unique<Module>("toy", context);
-    funcPassManager = std::make_unique<legacy::FunctionPassManager>(module.get());
+    opPrecedence['<'] = 2;
+    opPrecedence['>'] = 3;
+    opPrecedence['+'] = 5;
+    opPrecedence['-'] = 6;
+    opPrecedence['*'] = 7;
+    opPrecedence['/'] = 8;
     
-    // funcPassManager->add(createInstructionCombiningPass());
-    // funcPassManager->add(createReassociatePass());
-    // funcPassManager->add(createGVNPass());
-    // funcPassManager->add(createCFGSimplificationPass());
-    funcPassManager->doInitialization();
 }
-
 static void handleFunctionDef() {
     if (std::unique_ptr<FunctionAST> F = parseFunctionDef()) {
         if (auto LF = F->codegen()) {
@@ -401,12 +303,15 @@ static void handleFunctionDef() {
 
 static void handleExtern() {
     if (parseExtern()) {
-        fprintf(stderr, "Parsed an extern\n");
+        //fprintf(stderr, "Parsed an extern\n");
+
     } else {
         // Skip token for error recovery.
         nextToken();
     }
 }
+
+
 
 static void handleTopExpression() {
     if (std::unique_ptr<FunctionAST> F = parseTopLevelExpr()) {
@@ -440,6 +345,7 @@ static void driver() {
     }
 }
 
+
 int main(int argc, char *argv[]) {
     initPrecedence();
     char *filename = argv[1];
@@ -448,8 +354,7 @@ int main(int argc, char *argv[]) {
         printf("Could not open file\n");
     }
     nextToken();
-    initModuleAndPassManager();
     driver();
-    //module->print(errs(), nullptr);
+    Global::global()->module->print(errs(), nullptr);
     return 0;
 }

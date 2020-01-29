@@ -7,11 +7,19 @@
 
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include <string>
 #include <map>
 
+using namespace llvm;
 
-namespace {
+namespace toy {
 
     enum Token_Type {
         EOF_TOKEN = 0,
@@ -31,22 +39,15 @@ namespace {
         virtual llvm::Value *codegen() = 0;
     };
 
-    class IfAST {
-    public:
-        virtual ~IfAST(){}
-        virtual llvm::Value *codegen()=0;
-    };
+    class IfExprAST : public ExprAST {
+        std::unique_ptr<ExprAST> Cond, Then, Else;
 
-    class ThenAST {
     public:
-        virtual ~ThenAST(){}
-        virtual llvm::Value *codegen()=0;
-    };
+        IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
+                std::unique_ptr<ExprAST> Else)
+        : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
 
-    class ElseAST {
-    public:
-        virtual ~ElseAST(){}
-        virtual llvm::Value *codegen()=0;
+        llvm::Value *codegen() override;
     };
 
     class NumericAST : public ExprAST {
@@ -83,9 +84,9 @@ namespace {
         std::vector<std::unique_ptr<ExprAST>> args;
 
     public:
-        CallExprAST(const std::string &callee, std::vector<std::unique_ptr<ExprAST>> args) : callee(callee),
-                                                                                             args(std::move(args)) {}
-
+        CallExprAST(const std::string &callee, 
+        std::vector<std::unique_ptr<ExprAST>> args) 
+        : callee(callee),args(std::move(args)) {}
         llvm::Value *codegen() override;
     };
 
@@ -94,8 +95,8 @@ namespace {
         std::vector<std::string> args;
 
     public:
-        PrototypeAST(const std::string &name, const std::vector<std::string> args) : name(name),
-                                                                                     args(std::move(args)) {};
+        PrototypeAST(const std::string &name, const std::vector<std::string> args) 
+        : name(name),args(std::move(args)) {};
 
         const std::string &getName() const {
             return name;
@@ -109,10 +110,23 @@ namespace {
         std::unique_ptr<ExprAST> body;
 
     public:
-        FunctionAST(std::unique_ptr<PrototypeAST> proto, std::unique_ptr<ExprAST> body) : proto(std::move(proto)),
-                                                                                          body(std::move(body)) {}
+        FunctionAST(std::unique_ptr<PrototypeAST> proto, std::unique_ptr<ExprAST> body) 
+        : proto(std::move(proto)),body(std::move(body)) {}
 
         llvm::Function *codegen();
+    };
+
+    class Global {
+    public:
+        LLVMContext context;
+        IRBuilder<> builder;
+        std::unique_ptr<Module> module;
+        std::unique_ptr<legacy::FunctionPassManager> funcPassManager;
+        std::map<std::string, Value *> NamedValues;
+        std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+        static Global* global();
+    private:
+        Global();
     };
 }
 
