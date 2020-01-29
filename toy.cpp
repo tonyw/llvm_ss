@@ -31,15 +31,27 @@ static int getToken() {
 
     if (isalpha(lastChar)) {
         identifierString = lastChar;
-        while (isalnum((lastChar = fgetc(file))))
+        while (isalnum((lastChar = fgetc(file)))){
             identifierString += lastChar;
-
-        if (identifierString == "def")
+        }
+        if (identifierString == "def"){
             return DEF_TOKEN;
-        if (identifierString == "return")
-            return RETURN_TOKEN;
-
-        return IDENTIFIER_TOKEN;
+        }else
+        if (identifierString == "extern"){
+            return EXTERN_TOKEN;
+        }else
+        if (identifierString == "if"){
+            return IF_TOKEN;
+        }else
+        if (identifierString == "then"){
+            return THEN_TOKEN;
+        }else
+        if (identifierString == "else"){
+            return ELSE_TOKEN;
+        }else{
+            return IDENTIFIER_TOKEN;
+        }
+        
     }
 
     if (isdigit(lastChar)) {
@@ -149,7 +161,6 @@ static std::unique_ptr<ExprAST> parseParenExpr() {
     return V;
 }
 
-<<<<<<< HEAD
 static std::unique_ptr<ExprAST> parsePrimary()
 {
     switch (currentToken)
@@ -162,18 +173,6 @@ static std::unique_ptr<ExprAST> parsePrimary()
         return parseNumericExpr();
     case '(':
         return parseParenExpr();
-=======
-static std::unique_ptr<ExprAST> parsePrimary() {
-    switch (currentToken) {
-        default:
-            return 0;
-        case IDENTIFIER_TOKEN:
-            return parseIdentifierExpr();
-        case NUMERIC_TOKEN:
-            return parseNumericExpr();
-        case '(':
-            return parseParenExpr();
->>>>>>> c099c167c60c98f0f7318e0c05d4b493ca37362e
     }
 }
 
@@ -210,27 +209,15 @@ static std::unique_ptr<ExprAST> parseExpression() {
     return parseBinOp(0, std::move(LHS));
 }
 
-<<<<<<< HEAD
 static std::unique_ptr<PrototypeAST> parsePrototype()
 {
     if (currentToken != IDENTIFIER_TOKEN){
         return LogErrorP("Expected function name in prototype");
-=======
-static std::unique_ptr<PrototypeAST> parsePrototype() {
-    if (currentToken != IDENTIFIER_TOKEN) {
-        return 0;
->>>>>>> c099c167c60c98f0f7318e0c05d4b493ca37362e
     }
     std::string FnName = identifierString;
     nextToken();
-
-<<<<<<< HEAD
     if (currentToken != '('){
         return LogErrorP("Expected '(' in prototype");
-=======
-    if (currentToken != '(') {
-        return 0;
->>>>>>> c099c167c60c98f0f7318e0c05d4b493ca37362e
     }
 
     std::vector<std::string> Function_Argument_Names;
@@ -239,14 +226,8 @@ static std::unique_ptr<PrototypeAST> parsePrototype() {
             Function_Argument_Names.push_back(identifierString);
         }
     }
-
-<<<<<<< HEAD
     if (currentToken != ')'){
         return LogErrorP("Expected ')' in prototype");
-=======
-    if (currentToken != ')') {
-        return 0;
->>>>>>> c099c167c60c98f0f7318e0c05d4b493ca37362e
     }
     nextToken();
     return std::make_unique<PrototypeAST>(FnName, std::move(Function_Argument_Names));
@@ -262,6 +243,11 @@ static std::unique_ptr<FunctionAST> parseFunctionDef() {
         return std::make_unique<FunctionAST>(std::move(proto), std::move(body));
     }
     return 0;
+}
+
+static std::unique_ptr<PrototypeAST> parseExtern() {
+    nextToken();  // eat extern.
+    return parsePrototype();
 }
 
 static std::unique_ptr<FunctionAST> parseTopLevelExpr() {
@@ -336,8 +322,15 @@ Value *BinaryAST::codegen() {
     }
 }
 
+
+
 Value *CallExprAST::codegen() {
     Function *CalleeF = module->getFunction(callee);
+
+    if(!CalleeF){
+        fprintf(stderr, "Error: can't find function %s\n", callee.c_str());
+        return nullptr;
+    }
 
     std::vector<Value *> ArgsV;
     for (unsigned i = 0, e = args.size(); i != e; ++i) {
@@ -406,6 +399,15 @@ static void handleFunctionDef() {
     }
 }
 
+static void handleExtern() {
+    if (parseExtern()) {
+        fprintf(stderr, "Parsed an extern\n");
+    } else {
+        // Skip token for error recovery.
+        nextToken();
+    }
+}
+
 static void handleTopExpression() {
     if (std::unique_ptr<FunctionAST> F = parseTopLevelExpr()) {
 
@@ -428,6 +430,9 @@ static void driver() {
             case DEF_TOKEN:
                 handleFunctionDef();
                 break;
+            case EXTERN_TOKEN:
+                handleExtern();
+                break;
             default:
                 handleTopExpression();
                 break;
@@ -445,6 +450,6 @@ int main(int argc, char *argv[]) {
     nextToken();
     initModuleAndPassManager();
     driver();
-    module->print(errs(), nullptr);
+    //module->print(errs(), nullptr);
     return 0;
 }

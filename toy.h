@@ -15,10 +15,13 @@ namespace {
 
     enum Token_Type {
         EOF_TOKEN = 0,
-        DEF_TOKEN,
-        IDENTIFIER_TOKEN,
-        NUMERIC_TOKEN,
-        RETURN_TOKEN
+        DEF_TOKEN = -1,
+        EXTERN_TOKEN = -2,
+        IF_TOKEN = -3,
+        THEN_TOKEN = -4,
+        ELSE_TOKEN = -5,
+        IDENTIFIER_TOKEN = -6,
+        NUMERIC_TOKEN = -7
     };
 
     class ExprAST {
@@ -26,6 +29,24 @@ namespace {
         virtual ~ExprAST() {}
 
         virtual llvm::Value *codegen() = 0;
+    };
+
+    class IfAST {
+    public:
+        virtual ~IfAST(){}
+        virtual llvm::Value *codegen()=0;
+    };
+
+    class ThenAST {
+    public:
+        virtual ~ThenAST(){}
+        virtual llvm::Value *codegen()=0;
+    };
+
+    class ElseAST {
+    public:
+        virtual ~ElseAST(){}
+        virtual llvm::Value *codegen()=0;
     };
 
     class NumericAST : public ExprAST {

@@ -2,25 +2,8 @@ cmake_minimum_required(VERSION 3.10)
 project(llvm_ss)
 SET(CMAKE_CXX_STANDARD 14)
 
-SET(CMAKE_C_COMPILER             "/usr/bin/clang-6.0")
 SET(CMAKE_C_FLAGS_DEBUG          "-g")
-SET(CMAKE_C_FLAGS_MINSIZEREL     "-Os -DNDEBUG")
-SET(CMAKE_C_FLAGS_RELEASE        "-O4 -DNDEBUG")
-SET(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g")
-
-SET(CMAKE_CXX_COMPILER "/usr/bin/clang++-6.0")
-SET(CMAKE_CXX_FLAGS                "-Wall")
 SET(CMAKE_CXX_FLAGS_DEBUG          "-g")
-SET(CMAKE_CXX_FLAGS_MINSIZEREL     "-Os -DNDEBUG")
-SET(CMAKE_CXX_FLAGS_RELEASE        "-O4 -DNDEBUG")
-SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
-
-SET(CMAKE_AR      "/usr/bin/llvm-ar-6.0")
-SET(CMAKE_LINKER  "/usr/bin/llvm-ld-6.0")
-SET(CMAKE_NM      "/usr/bin/llvm-nm-6.0")
-SET(CMAKE_OBJDUMP "/usr/bin/llvm-objdump-6.0")
-SET(CMAKE_RANLIB  "/usr/bin/llvm-ranlib-6.0")
-
 
 find_package(LLVM REQUIRED CONFIG)
 set(source_files toy.cpp toy.h)
