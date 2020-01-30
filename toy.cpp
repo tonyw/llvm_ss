@@ -1,32 +1,35 @@
 #include "llvm/Transforms/Scalar/GVN.h"
 #include <cctype>
 #include <cstdio>
-#include <map>
-#include <string>
-#include <sstream>
-#include <vector>
 #include <iostream>
+#include <map>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "toy.h"
 
 using namespace llvm;
 using namespace toy;
 
-FILE *file;
+FILE* file;
 static std::string identifierString;
 static int numericVal;
 
 /// LogError* - These are little helper functions for error handling.
-    std::unique_ptr<ExprAST> LogError(const char *Str) {
+std::unique_ptr<ExprAST> LogError(const char* Str)
+{
     fprintf(stderr, "Error: %s\n", Str);
     return nullptr;
-    }
-    std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+}
+std::unique_ptr<PrototypeAST> LogErrorP(const char* Str)
+{
     LogError(Str);
     return nullptr;
-    }
+}
 
-static int getToken() {
+static int getToken()
+{
     static int lastChar = ' ';
     while (isspace(lastChar)) {
         lastChar = fgetc(file);
@@ -34,27 +37,22 @@ static int getToken() {
 
     if (isalpha(lastChar)) {
         identifierString = lastChar;
-        while (isalnum((lastChar = fgetc(file)))){
+        while (isalnum((lastChar = fgetc(file)))) {
             identifierString += lastChar;
         }
-        if (identifierString == "def"){
+        if (identifierString == "def") {
             return DEF_TOKEN;
-        }else
-        if (identifierString == "extern"){
+        } else if (identifierString == "extern") {
             return EXTERN_TOKEN;
-        }else
-        if (identifierString == "if"){
+        } else if (identifierString == "if") {
             return IF_TOKEN;
-        }else
-        if (identifierString == "then"){
+        } else if (identifierString == "then") {
             return THEN_TOKEN;
-        }else
-        if (identifierString == "else"){
+        } else if (identifierString == "else") {
             return ELSE_TOKEN;
-        }else{
+        } else {
             return IDENTIFIER_TOKEN;
         }
-        
     }
 
     if (isdigit(lastChar)) {
@@ -85,16 +83,17 @@ static int getToken() {
     return theChar;
 }
 
-
 static int currentToken;
 
-static int nextToken() {
+static int nextToken()
+{
     return currentToken = getToken();
 }
 
 static std::map<char, int> opPrecedence;
 
-static int getBinOpPrecedence() {
+static int getBinOpPrecedence()
+{
     if (!isascii(currentToken))
         return -1;
 
@@ -106,7 +105,8 @@ static int getBinOpPrecedence() {
 
 static std::unique_ptr<ExprAST> parseExpression();
 
-static std::unique_ptr<ExprAST> parseIdentifierExpr() {
+static std::unique_ptr<ExprAST> parseIdentifierExpr()
+{
     std::string idName = identifierString;
     nextToken();
     if (currentToken != '(')
@@ -135,13 +135,15 @@ static std::unique_ptr<ExprAST> parseIdentifierExpr() {
     return std::make_unique<CallExprAST>(idName, std::move(args));
 }
 
-static std::unique_ptr<ExprAST> parseNumericExpr() {
+static std::unique_ptr<ExprAST> parseNumericExpr()
+{
     auto Result = std::make_unique<NumericAST>(numericVal);
     nextToken();
     return std::move(Result);
 }
 
-static std::unique_ptr<ExprAST> parseParenExpr() {
+static std::unique_ptr<ExprAST> parseParenExpr()
+{
     nextToken();
     auto V = parseExpression();
     if (!V) {
@@ -154,16 +156,17 @@ static std::unique_ptr<ExprAST> parseParenExpr() {
     return V;
 }
 
-static std::unique_ptr<ExprAST> parseIfExpr(){
+static std::unique_ptr<ExprAST> parseIfExpr()
+{
     nextToken();
     auto Cond = parseExpression();
-    if (!Cond){
+    if (!Cond) {
         return nullptr;
     }
-    printf("the cur tok is %c \n",currentToken);
+    printf("the cur tok is %c \n", currentToken);
     if (currentToken != THEN_TOKEN)
         return LogError("expected then");
-    nextToken();  // eat the then
+    nextToken(); // eat the then
 
     auto Then = parseExpression();
     if (!Then)
@@ -179,13 +182,12 @@ static std::unique_ptr<ExprAST> parseIfExpr(){
         return nullptr;
 
     return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
-                                        std::move(Else));
+        std::move(Else));
 }
 
 static std::unique_ptr<ExprAST> parsePrimary()
 {
-    switch (currentToken)
-    {
+    switch (currentToken) {
     default:
         return LogError("unknown token when expecting an expression");
     case IDENTIFIER_TOKEN:
@@ -199,7 +201,8 @@ static std::unique_ptr<ExprAST> parsePrimary()
     }
 }
 
-static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST> LHS) {
+static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST> LHS)
+{
     while (1) {
         if (currentToken == ';') {
             return LHS;
@@ -224,7 +227,8 @@ static std::unique_ptr<ExprAST> parseBinOp(int exprPrec, std::unique_ptr<ExprAST
     }
 }
 
-static std::unique_ptr<ExprAST> parseExpression() {
+static std::unique_ptr<ExprAST> parseExpression()
+{
     auto LHS = parsePrimary();
     if (!LHS) {
         return nullptr;
@@ -234,12 +238,12 @@ static std::unique_ptr<ExprAST> parseExpression() {
 
 static std::unique_ptr<PrototypeAST> parsePrototype()
 {
-    if (currentToken != IDENTIFIER_TOKEN){
+    if (currentToken != IDENTIFIER_TOKEN) {
         return LogErrorP("Expected function name in prototype");
     }
     std::string FnName = identifierString;
     nextToken();
-    if (currentToken != '('){
+    if (currentToken != '(') {
         return LogErrorP("Expected '(' in prototype");
     }
 
@@ -249,14 +253,15 @@ static std::unique_ptr<PrototypeAST> parsePrototype()
             Function_Argument_Names.push_back(identifierString);
         }
     }
-    if (currentToken != ')'){
+    if (currentToken != ')') {
         return LogErrorP("Expected ')' in prototype");
     }
     nextToken();
     return std::make_unique<PrototypeAST>(FnName, std::move(Function_Argument_Names));
 }
 
-static std::unique_ptr<FunctionAST> parseFunctionDef() {
+static std::unique_ptr<FunctionAST> parseFunctionDef()
+{
     nextToken();
     std::unique_ptr<PrototypeAST> proto = parsePrototype();
     if (proto == 0) {
@@ -268,30 +273,32 @@ static std::unique_ptr<FunctionAST> parseFunctionDef() {
     return 0;
 }
 
-static std::unique_ptr<PrototypeAST> parseExtern() {
-    nextToken();  // eat extern.
+static std::unique_ptr<PrototypeAST> parseExtern()
+{
+    nextToken(); // eat extern.
     return parsePrototype();
 }
 
-static std::unique_ptr<FunctionAST> parseTopLevelExpr() {
+static std::unique_ptr<FunctionAST> parseTopLevelExpr()
+{
     if (std::unique_ptr<ExprAST> E = parseExpression()) {
-        std::unique_ptr<PrototypeAST> Func_Decl = 
-        std::make_unique<PrototypeAST>("_anon_expr",std::vector<std::string>());
+        std::unique_ptr<PrototypeAST> Func_Decl = std::make_unique<PrototypeAST>("_anon_expr", std::vector<std::string>());
         return std::make_unique<FunctionAST>(std::move(Func_Decl), std::move(E));
     }
     return 0;
 }
 
-static void initPrecedence() {
+static void initPrecedence()
+{
     opPrecedence['<'] = 2;
     opPrecedence['>'] = 3;
     opPrecedence['+'] = 5;
     opPrecedence['-'] = 6;
     opPrecedence['*'] = 7;
     opPrecedence['/'] = 8;
-    
 }
-static void handleFunctionDef() {
+static void handleFunctionDef()
+{
     if (std::unique_ptr<FunctionAST> F = parseFunctionDef()) {
         if (auto LF = F->codegen()) {
             //LF->print(errs());
@@ -301,19 +308,18 @@ static void handleFunctionDef() {
     }
 }
 
-static void handleExtern() {
+static void handleExtern()
+{
     if (parseExtern()) {
         //fprintf(stderr, "Parsed an extern\n");
-
     } else {
         // Skip token for error recovery.
         nextToken();
     }
 }
 
-
-
-static void handleTopExpression() {
+static void handleTopExpression()
+{
     if (std::unique_ptr<FunctionAST> F = parseTopLevelExpr()) {
 
         if (auto LF = F->codegen()) {
@@ -324,31 +330,32 @@ static void handleTopExpression() {
     }
 }
 
-static void driver() {
+static void driver()
+{
     while (1) {
         switch (currentToken) {
-            case EOF_TOKEN:
-                return;
-            case ';':
-                nextToken();
-                break;
-            case DEF_TOKEN:
-                handleFunctionDef();
-                break;
-            case EXTERN_TOKEN:
-                handleExtern();
-                break;
-            default:
-                handleTopExpression();
-                break;
+        case EOF_TOKEN:
+            return;
+        case ';':
+            nextToken();
+            break;
+        case DEF_TOKEN:
+            handleFunctionDef();
+            break;
+        case EXTERN_TOKEN:
+            handleExtern();
+            break;
+        default:
+            handleTopExpression();
+            break;
         }
     }
 }
 
-
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[])
+{
     initPrecedence();
-    char *filename = argv[1];
+    char* filename = argv[1];
     file = fopen(filename, "r");
     if (file == 0) {
         printf("Could not open file\n");
